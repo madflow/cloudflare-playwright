@@ -1,5 +1,5 @@
 {
-  "name": "@cloudflare/playwright",
+  "name": "@madflow/playwright-cloudflare",
   "description": "Playwright for Cloudflare Workers",
   "version": "1.0.0-next",
   "license": "Apache-2.0",
