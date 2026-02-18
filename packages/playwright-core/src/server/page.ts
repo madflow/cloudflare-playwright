@@ -872,10 +872,14 @@ export class Worker extends SdkObject {
   private _workerScriptLoaded = false;
   existingExecutionContext: js.ExecutionContext | null = null;
   readonly openScope = new LongStandingScope();
+  private _targetId: string;
+  private _reSession: any;
 
-  constructor(parent: SdkObject, url: string) {
+  constructor(parent: SdkObject, url: string, targetId: string = '', session: any = null) {
     super(parent, 'worker');
     this.url = url;
+    this._targetId = targetId;
+    this._reSession = session;
   }
 
   createExecutionContext(delegate: js.ExecutionContextDelegate) {
@@ -898,12 +902,23 @@ export class Worker extends SdkObject {
     this.openScope.close(new Error('Worker closed'));
   }
 
+  async getExecutionContext() {
+    if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] !== '0' && !this.existingExecutionContext) {
+      await this._reSession.__re__emitExecutionContext({
+        world: 'main',
+        targetId: this._targetId,
+      });
+    }
+
+    return this._executionContextPromise;
+  }
+
   async evaluateExpression(expression: string, isFunction: boolean | undefined, arg: any): Promise<any> {
-    return js.evaluateExpression(await this._executionContextPromise, expression, { returnByValue: true, isFunction }, arg);
+    return js.evaluateExpression(await this.getExecutionContext(), expression, { returnByValue: true, isFunction }, arg);
   }
 
   async evaluateExpressionHandle(expression: string, isFunction: boolean | undefined, arg: any): Promise<any> {
-    return js.evaluateExpression(await this._executionContextPromise, expression, { returnByValue: false, isFunction }, arg);
+    return js.evaluateExpression(await this.getExecutionContext(), expression, { returnByValue: false, isFunction }, arg);
   }
 }
 
@@ -939,6 +954,10 @@ export class PageBinding {
   }
 
   static async dispatch(page: Page, payload: string, context: dom.FrameExecutionContext) {
+    if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] !== '0' && !payload.includes('{')) {
+      // ignore as it's not a JSON but a string from addBinding method
+      return;
+    }
     const { name, seq, serializedArgs } = JSON.parse(payload) as BindingPayload;
     try {
       assert(context.world);

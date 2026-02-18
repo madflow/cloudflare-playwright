@@ -59,7 +59,9 @@ export class CRServiceWorker extends Worker {
       this.browserContext.emit(BrowserContext.Events.Console, message);
     });
 
-    session.send('Runtime.enable', {}).catch(e => { });
+    if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] === '0') {
+      session.send('Runtime.enable', {}).catch(e => { });
+    }
     session.send('Runtime.runIfWaitingForDebugger').catch(e => { });
     session.on('Inspector.targetReloadedAfterCrash', () => {
       // Resume service worker after restart.

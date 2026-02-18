@@ -514,7 +514,11 @@ class FrameSession {
       }),
       this._client.send('Log.enable', {}),
       lifecycleEventsEnabled = this._client.send('Page.setLifecycleEventsEnabled', { enabled: true }),
-      this._client.send('Runtime.enable', {}),
+      (() => {
+        if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] === '0') {
+          return this._client.send('Runtime.enable', {})
+        }
+      })() as any,
       this._client.send('Page.addScriptToEvaluateOnNewDocument', {
         source: '',
         worldName: this._crPage.utilityWorldName,
@@ -739,7 +743,7 @@ class FrameSession {
     }
 
     const url = event.targetInfo.url;
-    const worker = new Worker(this._page, url);
+    const worker = new Worker(this._page, url, event.targetInfo.targetId, session);
     this._page.addWorker(event.sessionId, worker);
     this._workerSessions.set(event.sessionId, session);
     session.once('Runtime.executionContextCreated', async event => {
@@ -749,8 +753,10 @@ class FrameSession {
       session.on('Inspector.workerScriptLoaded', () => worker.workerScriptLoaded());
     else
       worker.workerScriptLoaded();
-    // This might fail if the target is closed before we initialize.
-    session._sendMayFail('Runtime.enable');
+    if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] === '0') {
+      // This might fail if the target is closed before we initialize.
+      session._sendMayFail('Runtime.enable');
+    }
     // TODO: attribute workers to the right frame.
     this._crPage._networkManager.addSession(session, this._page.frameManager.frame(this._targetId) ?? undefined).catch(() => {});
     session._sendMayFail('Runtime.runIfWaitingForDebugger');

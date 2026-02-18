@@ -516,6 +516,8 @@ export class Frame extends SdkObject {
       this._startNetworkIdleTimer();
     this._page.mainFrame()._recalculateNetworkIdle(this);
     this._onLifecycleEvent('commit');
+    const crSession = ((this._page.delegate as any)._sessions.get(this._id) || (this._page.delegate as any)._mainFrameSession)._client;
+    crSession.emit('Runtime.executionContextsCleared');
   }
 
   setPendingDocument(documentInfo: DocumentInfo | undefined) {
@@ -714,12 +716,34 @@ export class Frame extends SdkObject {
     return this._page.delegate.getFrameElement(this);
   }
 
-  _context(world: types.World): Promise<dom.FrameExecutionContext> {
-    return this._contextData.get(world)!.contextPromise.then(contextOrDestroyedReason => {
-      if (contextOrDestroyedReason instanceof js.ExecutionContext)
-        return contextOrDestroyedReason;
-      throw new Error(contextOrDestroyedReason.destroyedReason);
-    });
+  _context(world: types.World, useContextPromise = false): Promise<dom.FrameExecutionContext> {
+    if (process.env['REBROWSER_PATCHES_RUNTIME_FIX_MODE'] === '0' || this._contextData.get(world)!.context || useContextPromise) {
+      return this._contextData.get(world)!.contextPromise.then(contextOrDestroyedReason => {
+        if (contextOrDestroyedReason instanceof js.ExecutionContext)
+          return contextOrDestroyedReason;
+        throw new Error(contextOrDestroyedReason.destroyedReason);
+      });
+    }
+
+    const crSession = ((this._page.delegate as any)._sessions.get(this._id) || (this._page.delegate as any)._mainFrameSession)._client;
+    return crSession.__re__emitExecutionContext({
+      world,
+      targetId: this._id,
+      frame: this
+    })
+      .then(() => {
+        return this._context(world, true);
+      })
+      .catch((error: any) => {
+        if (error.message.includes('No frame for given id found')) {
+          // ignore, frame is already gone
+          return {
+            destroyedReason: 'Frame was detached'
+          };
+        }
+        debugLogger.log('error', error);
+        console.error('[rebrowser-patches][frames._context] cannot get world, error:', error);
+      });
   }
 
   _mainContext(): Promise<dom.FrameExecutionContext> {
